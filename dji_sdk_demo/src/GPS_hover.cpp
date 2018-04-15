@@ -159,7 +159,7 @@ int main(int argc, char **argv)
   ros::init(argc, argv, "offb_ctrl");
   ros::NodeHandle nh;
   
-  ros::Subscriber localPosition ;
+  ros::Subscriber localPosition;
   ros::Publisher ctrlvelPub;
 
   localPosition = nh.subscribe("dji_sdk/local_position", 10, &local_position_callback);

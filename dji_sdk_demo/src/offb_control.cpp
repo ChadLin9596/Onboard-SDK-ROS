@@ -108,7 +108,7 @@ char getch()
     return (buf);
 }
 
-void keyboard_control()
+geometry_msgs::PoseStamped keyboard_control(geometry_msgs::PoseStamped goal)
 {
 
   int c = getch();
@@ -149,6 +149,7 @@ void keyboard_control()
 
     }
   }
+  return goal;
 }
 
 int main(int argc, char** argv)
@@ -206,7 +207,7 @@ int main(int argc, char** argv)
     local_body.y = sin(-yaw)*local_position.pose.position.x + cos(-yaw)*local_position.pose.position.y;
     local_body.z = local_position.pose.position.z;
     ROS_INFO("local_body : %.4f, %.4f, %.4f",local_body.x,local_body.y,local_body.z);
-    keyboard_control();
+    goal = keyboard_control(goal);
     err.pose.position.x = goal.pose.position.x ;//- local_body.x;
     err.pose.position.y = goal.pose.position.y ;//- local_body.y;
     err.pose.position.z = goal.pose.position.z + z_desire ;//- local_body.z;

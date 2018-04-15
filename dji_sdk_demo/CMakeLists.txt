@@ -197,6 +197,7 @@ target_link_libraries(GPS_control
         ${DJIOSDK_LIBRARIES}
         )
 add_dependencies(GPS_control dji_sdk_generate_messages_cpp)
+
 #############
 ## Install ##
 #############

@@ -10,7 +10,6 @@
  */
 
 #include <dji_sdk/dji_sdk_node.h>
-
 /*!
  * @brief The flight controller takes control signals with frame convention:
  *   body:   Forward-Right for horizontal
