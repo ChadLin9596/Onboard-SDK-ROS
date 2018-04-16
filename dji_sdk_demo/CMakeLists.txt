@@ -158,14 +158,6 @@ target_link_libraries(demo_local_position_control
 		)
 add_dependencies(demo_local_position_control dji_sdk_generate_messages_cpp)
 
-add_executable(offb_control
-		src/offb_control.cpp)
-target_link_libraries(offb_control
-		${catkin_LIBRARIES}
-		${DJIOSDK_LIBRARIES}
-		)
-add_dependencies(offb_control dji_sdk_generate_messages_cpp)
-
 add_executable(takeoff
         src/takeoff.cpp)
 target_link_libraries(takeoff
@@ -190,14 +182,13 @@ target_link_libraries(offb_ctrl
         )
 add_dependencies(offb_ctrl dji_sdk_generate_messages_cpp)
 
-add_executable(GPS_control
-        src/GPS_control.cpp)
-target_link_libraries(GPS_control
+add_executable(GPS_ctrl
+        src/GPS_ctrl.cpp)
+target_link_libraries(GPS_ctrl
         ${catkin_LIBRARIES}
         ${DJIOSDK_LIBRARIES}
         )
-add_dependencies(GPS_control dji_sdk_generate_messages_cpp)
-
+add_dependencies(GPS_ctrl dji_sdk_generate_messages_cpp)
 #############
 ## Install ##
 #############
