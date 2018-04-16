@@ -93,24 +93,6 @@ void keyboard_control()
       goal.y = 0;
       goal.z = 0;
       break;
-      case 106:     // j
-      pid.KP += 0.001;
-      break;
-      case 107:     // k
-      pid.KI += 0.001;
-      break;
-      case 108:     // l
-      pid.KD += 0.001;
-      break;
-      case 109:     // m
-      pid.KP -= 0.001;
-      break;
-      case 44 :     // ,
-      pid.KI -= 0.001;
-      break;
-      case 46 :     // .
-      pid.KD -= 0.001;
-      break;
     }
   }
 }
@@ -177,21 +159,21 @@ int main(int argc, char **argv)
   ctrlvelPub = nh.advertise<sensor_msgs::Joy>("dji_sdk/flight_control_setpoint_generic", 10);
   sdk_ctrl_authority_service = nh.serviceClient<dji_sdk::SDKControlAuthority> ("dji_sdk/sdk_control_authority");
   // in GPS environment
-  ros::Subscriber localPosition;
-  localPosition = nh.subscribe("dji_sdk/local_position", 10, &local_position_callback);
+  ros::Subscriber localPosition_cb;
+  localPosition_cb = nh.subscribe("dji_sdk/local_position", 10, &local_position_callback);
   set_local_pos_reference    = nh.serviceClient<dji_sdk::SetLocalPosRef> ("dji_sdk/set_local_pos_ref");
   // in GPS environment
 
   //initialize
-  int frequency = 50;
-  float bias = 37;
+  double frequency = 50;
+  double bias = 25;
   bool obtain_control_result = obtain_control();
-  bool integtal = 0;
-  bool derivative = 0;
-  bool err_prior = 0;
-  pid.KP = 0.5;
-  pid.KI = 0;
-  pid.KD = 0;
+  double integral = 0;
+  double derivative = 0;
+  double err_prior = 0;
+  pid.KP = 1.1;
+  pid.KI = 0.06;
+  pid.KD = 0.7; // settle time
   double  rollCmd, pitchCmd, thrustCmd;
   double  yawDesiredRad= 0  ;
   double z_desire = 2; //m
@@ -199,6 +181,7 @@ int main(int argc, char **argv)
 
   ros::Rate loop_rate(frequency);
   while(obtain_control_result){
+    //OS_INFO("time -%d",ros::Time::now());
     ROS_INFO("---keyboard control start---");
     //input goal;
 
@@ -235,13 +218,15 @@ int main(int argc, char **argv)
     ROS_INFO("err  position : %.4f, %.4f, %.4f",err.pose.position.x,err.pose.position.y,err.pose.position.z);
     //conmmands
     ROS_INFO("P : %f I : %f  D : %f ",pid.KP,pid.KI,pid.KD);
-    integtal   = integtal + err.pose.position.z*(1/frequency);
+    integral   = integral + err.pose.position.z*(1/frequency);
     derivative = (err.pose.position.z - err_prior)*frequency;
+    ROS_INFO("integral : %f , derivative : %f",integral,derivative);
     err_prior =err.pose.position.z;
 
     rollCmd = -err.pose.position.y*KP_horizontal;
     pitchCmd = err.pose.position.x*KP_horizontal;
-    thrustCmd = err.pose.position.z*pid.KP + integtal*pid.KI + derivative*pid.KD + bias;
+    thrustCmd = err.pose.position.z*pid.KP + integral*pid.KI + derivative*pid.KD + bias;
+
     //rollCmd = confineHorizontal(rollCmd);
     //pitchCmd = confineHorizontal(pitchCmd);
     //thrustCmd = confineVertical(thrustCmd);
