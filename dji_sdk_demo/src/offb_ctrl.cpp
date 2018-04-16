@@ -6,38 +6,34 @@
 #include "geometry_msgs/Quaternion.h"
 #include <geometry_msgs/PointStamped.h>
 #include "tf/tf.h"
-#define KP_z 10
-#define KI_z 1
-#define KP_horizontal 1
+#define KP_horizontal 0.05
 //#define PI 3.1415926  C_PI
-double z_desire = 10; //m
-
-struct PID
-{
-  float KP;
-  float KI;
-  float KD;
-};
-
-struct PID pid;
 
 geometry_msgs::Point goal;
 geometry_msgs::PoseStamped host_mocap;
 geometry_msgs::PoseStamped err;
 geometry_msgs::Quaternion local_quat;
 geometry_msgs::Point local_body;
+// in GPS environment
 geometry_msgs::PointStamped local_position;
-
 ros::ServiceClient set_local_pos_reference;
 ros::ServiceClient sdk_ctrl_authority_service;
+// in GPS environment
 uint8_t flag = (
                 DJISDK::VERTICAL_THRUST      | // VERTICAL_THRUST = 0~100%
                 DJISDK::HORIZONTAL_ANGLE     | // limit 35 degree
                 DJISDK::YAW_ANGLE            | // limit 150 degree/s
                 DJISDK::HORIZONTAL_BODY      | // body frame
                 DJISDK::STABLE_ENABLE
-       );
+               );
 
+struct PID
+{
+  double KP;
+  double KI;
+  double KD;
+};
+struct PID pid;
 char getch()
 {
     int flags = fcntl(0, F_GETFL, 0);
@@ -65,76 +61,58 @@ char getch()
     }
     return (buf);
 }
-geometry_msgs::Point keyboard_control(geometry_msgs::Point key)
+void keyboard_control()
 {
   int c = getch();
   //ROS_INFO("C: %d",c);
   if (c != EOF) {
     switch (c)
     {
-      case 111:    // key up  o
-        key.z += 0.01;
-        //ROS_INFO("z+!!!");
-        break;
-      case 112:    // key down p
-        key.z -= 0.01;
-        //ROS_INFO("z-!!!");
-        break;
-      case 119:    // key foward  w
-        key.x += 0.001;
-        //ROS_INFO("x+!!!");
-        break;
-      case 115:    // key back   s
-        key.x -= 0.001;
-        //ROS_INFO("x-!!!");
-        break;
-      case 97:    // key left     a
-        key.y += 0.001;
-        //ROS_INFO("y+!!!");
-        break;
-      case 100:    // key right   d
-        key.y -= 0.001;
-        //ROS_INFO("y-!!!");
-        break;
-      case 114:    // key return  r
-        key.x = 0;
-        key.y = 0;
-        key.z = 0;
-        //ROS_INFO("Return home");
-        break;
+      case 111:     // key up  o
+      goal.z += 0.01;
+      //ROS_INFO("z+!!!");
+      break;
+      case 112:     // key down p
+      goal.z -= 0.01;
+      //ROS_INFO("z-!!!");
+      break;
+      case 119:     // key foward  w
+      goal.x += 0.001;
+      break;
+      case 115:     // key back   s
+      goal.x -= 0.001;
+      break;
+      case 97:      // key left     a
+      goal.y += 0.001;
+      break;
+      case 100:     // key right   d
+      goal.y -= 0.001;
+      break;
+      case 114:     // key return  r
+      goal.x = 0;
+      goal.y = 0;
+      goal.z = 0;
+      break;
+      case 106:     // j
+      pid.KP += 0.001;
+      break;
+      case 107:     // k
+      pid.KI += 0.001;
+      break;
+      case 108:     // l
+      pid.KD += 0.001;
+      break;
+      case 109:     // m
+      pid.KP -= 0.001;
+      break;
+      case 44 :     // ,
+      pid.KI -= 0.001;
+      break;
+      case 46 :     // .
+      pid.KD -= 0.001;
+      break;
     }
   }
-  return key;
-}
-
-PID keyboard_control_PID(PID pid)
-{
-  int c = getch();
-  //ROS_INFO("C: %d",c);
-  if (c != EOF) {
-    switch (c)
-    {
-      case 106:
-      pid.KP += 0.1;
-      break; // j
-      case 107:
-      pid.KI += 0.1;
-      break; // k
-      case 108:
-      pid.KD += 0.1;
-      break; // l
-      case 109:
-      pid.KP -= 0.1;
-      break; // m
-      case 44 :
-      pid.KI -= 0.1;
-      break; // ,
-      case 46 :
-      pid.KD -= 0.1;
-      break; // .
-    }
-  }
-  return pid;
 }
 
 void mocap_cb(const geometry_msgs::PoseStamped::ConstPtr& msg){
@@ -154,11 +132,11 @@ double confineHorizontal(double cmd)
 
 double confineVertical(double cmd)
 {
-  if (cmd >= 100)
-  {
-    ROS_INFO("cmd is too large");
-        cmd = 100;
-  }
+  if (cmd >= 37.5)
+  cmd = 37.3;
+  else if (cmd <= 37.1)
+  cmd = 37.1;
+  else
   return cmd;
 }
 
@@ -176,7 +154,7 @@ bool obtain_control()
 
   return true;
 }
-
+// in GPS environment
 void local_position_callback(const geometry_msgs::PointStamped::ConstPtr& msg) {
   local_position = *msg;
 }
@@ -186,7 +164,7 @@ bool set_local_position()
   dji_sdk::SetLocalPosRef localPosReferenceSetter;
   set_local_pos_reference.call(localPosReferenceSetter);
 }
-
+// in GPS environment
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "offb_ctrl");
@@ -194,20 +172,19 @@ int main(int argc, char **argv)
   
   ros::Subscriber host_mocap;
   ros::Publisher ctrlvelPub;
-  ros::Subscriber localPosition;
 
   host_mocap = nh.subscribe<geometry_msgs::PoseStamped>("vrpn_client_node/RigidBody1/pose", 10, &mocap_cb);
   ctrlvelPub = nh.advertise<sensor_msgs::Joy>("dji_sdk/flight_control_setpoint_generic", 10);
   sdk_ctrl_authority_service = nh.serviceClient<dji_sdk::SDKControlAuthority> ("dji_sdk/sdk_control_authority");
+  // in GPS environment
+  ros::Subscriber localPosition;
   localPosition = nh.subscribe("dji_sdk/local_position", 10, &local_position_callback);
   set_local_pos_reference    = nh.serviceClient<dji_sdk::SetLocalPosRef> ("dji_sdk/set_local_pos_ref");
+  // in GPS environment
 
   //initialize
   int frequency = 50;
-  float bias = 37.5;
-  set_local_position();
-  ros::Rate loop_rate(frequency);
-
+  float bias = 37;
   bool obtain_control_result = obtain_control();
   bool integtal = 0;
   bool derivative = 0;
@@ -215,7 +192,14 @@ int main(int argc, char **argv)
   pid.KP = 0.5;
   pid.KI = 0;
   pid.KD = 0;
+  double  rollCmd, pitchCmd, thrustCmd;
+  double  yawDesiredRad= 0  ;
+  double z_desire = 2; //m
+  set_local_position();
+
+  ros::Rate loop_rate(frequency);
   while(obtain_control_result){
+    ROS_INFO("---keyboard control start---");
     //input goal;
 
     // Quaternion
@@ -241,19 +225,15 @@ int main(int argc, char **argv)
     local_body.x = local_position.point.x;
     local_body.y = local_position.point.y;
     local_body.z = local_position.point.z;
-    ROS_INFO("local_body : %.4f, %.4f, %.4f",local_body.x,local_body.y,local_body.z);
+    ROS_INFO("local position: %.4f, %.4f, %.4f",local_body.x,local_body.y,local_body.z);
 
-    goal = keyboard_control(goal);
+    keyboard_control();
     err.pose.position.x = goal.x - local_body.x;
     err.pose.position.y = goal.y - local_body.y;
     err.pose.position.z = goal.z + z_desire - local_body.z;
     ROS_INFO("goal position : %.4f, %.4f, %.4f",goal.x,goal.y,goal.z);
     ROS_INFO("err  position : %.4f, %.4f, %.4f",err.pose.position.x,err.pose.position.y,err.pose.position.z);
-
     //conmmands
-    double  rollCmd, pitchCmd, thrustCmd;
-    double  yawDesiredRad= 0  ;
-    pid = keyboard_control_PID(pid);
     ROS_INFO("P : %f I : %f  D : %f ",pid.KP,pid.KI,pid.KD);
     integtal   = integtal + err.pose.position.z*(1/frequency);
     derivative = (err.pose.position.z - err_prior)*frequency;
@@ -279,4 +259,5 @@ int main(int argc, char **argv)
     loop_rate.sleep();
   }
   ROS_INFO("Flight Control Ending");
+  ros::spinOnce();
 }
