@@ -8,17 +8,13 @@
 #include "tf/tf.h"
 #define KP_horizontal 0.05
 //#define PI 3.1415926  C_PI
-
+double bias = 10;
 geometry_msgs::Point goal;
-geometry_msgs::PoseStamped host_mocap;
+geometry_msgs::PoseStamped local_position;
 geometry_msgs::PoseStamped err;
 geometry_msgs::Quaternion local_quat;
 geometry_msgs::Point local_body;
-// in GPS environment
-geometry_msgs::PointStamped local_position;
-ros::ServiceClient set_local_pos_reference;
 ros::ServiceClient sdk_ctrl_authority_service;
-// in GPS environment
 uint8_t flag = (
                 DJISDK::VERTICAL_THRUST      | // VERTICAL_THRUST = 0~100%
                 DJISDK::HORIZONTAL_ANGLE     | // limit 35 degree
@@ -32,8 +28,14 @@ struct PID
   double KP;
   double KI;
   double KD;
+  double in;
+  double de;
+  double pr;
 };
-struct PID pid;
+struct PID pid_ver;
+struct PID pid_hor_roll;
+struct PID pid_hor_pitch;
+
 char getch()
 {
     int flags = fcntl(0, F_GETFL, 0);
@@ -82,7 +84,7 @@ void keyboard_control()
       case 115:     // key back   s
       goal.x -= 0.001;
       break;
-      case 97:      // key left     a
+      case 97:      // key left    a
       goal.y += 0.001;
       break;
       case 100:     // key right   d
@@ -93,13 +95,19 @@ void keyboard_control()
       goal.y = 0;
       goal.z = 0;
       break;
+      case 105:    // i
+      bias -= 0.01;
+      break;
+      case 117:    // u
+      bias += 0.01;
+      break;
     }
   }
 }
 
 void mocap_cb(const geometry_msgs::PoseStamped::ConstPtr& msg){
 
-  host_mocap = *msg;
+  local_position = *msg;
 }
 
 double confineHorizontal(double cmd)
@@ -136,78 +144,66 @@ bool obtain_control()
 
   return true;
 }
-// in GPS environment
-void local_position_callback(const geometry_msgs::PointStamped::ConstPtr& msg) {
-  local_position = *msg;
-}
 
-bool set_local_position()
-{
-  dji_sdk::SetLocalPosRef localPosReferenceSetter;
-  set_local_pos_reference.call(localPosReferenceSetter);
-}
-// in GPS environment
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "offb_ctrl");
+  ros::init(argc, argv, "GPS_ctrl");
   ros::NodeHandle nh;
-  
+
   ros::Subscriber host_mocap;
   ros::Publisher ctrlvelPub;
+  ros::Publisher pidPub;
 
   host_mocap = nh.subscribe<geometry_msgs::PoseStamped>("vrpn_client_node/RigidBody1/pose", 10, &mocap_cb);
   ctrlvelPub = nh.advertise<sensor_msgs::Joy>("dji_sdk/flight_control_setpoint_generic", 10);
   sdk_ctrl_authority_service = nh.serviceClient<dji_sdk::SDKControlAuthority> ("dji_sdk/sdk_control_authority");
-  // in GPS environment
-  ros::Subscriber localPosition_cb;
-  localPosition_cb = nh.subscribe("dji_sdk/local_position", 10, &local_position_callback);
-  set_local_pos_reference    = nh.serviceClient<dji_sdk::SetLocalPosRef> ("dji_sdk/set_local_pos_ref");
-  // in GPS environment
+  pidPub = nh.advertise<geometry_msgs::Quaternion>("PIDtuning",10);
 
-  //initialize
-  double frequency = 50;
-  double bias = 25;
   bool obtain_control_result = obtain_control();
-  double integral = 0;
-  double derivative = 0;
-  double err_prior = 0;
-  pid.KP = 1.1;
-  pid.KI = 0.06;
-  pid.KD = 0.7; // settle time
+  //initialize
+  double frequency = 100;
+  double z_desire = 2; //m
+  //vertical            horizontal_roll           horizontal_pitch
+  pid_ver.KP = 10;      pid_hor_roll.KP = 1;      pid_hor_pitch.KP = 0;
+  pid_ver.KI = 0.1;     pid_hor_roll.KI = 0.05;   pid_hor_pitch.KI = 0;
+  pid_ver.KD = 0;       pid_hor_roll.KD = 0;      pid_hor_pitch.KD = 0;
+  pid_ver.in = 0;       pid_hor_roll.in = 0;      pid_hor_pitch.in = 0;
+  pid_ver.de = 0;       pid_hor_roll.de = 0;      pid_hor_pitch.de = 0;
+  pid_ver.pr = 0;       pid_hor_roll.pr = 0;      pid_hor_pitch.pr = 0;
+  int confine;
   double  rollCmd, pitchCmd, thrustCmd;
   double  yawDesiredRad= 0  ;
-  double z_desire = 2; //m
-  set_local_position();
 
   ros::Rate loop_rate(frequency);
-  while(obtain_control_result){
-    //OS_INFO("time -%d",ros::Time::now());
+while(ros::ok()){
+  if(obtain_control_result)
+  {
+    //ros::Time com =ros::Time::now();
     ROS_INFO("---keyboard control start---");
-    //input goal;
-
+    ROS_INFO("i,u ctrl bias: %f",bias);
+    ROS_INFO("PID_thrust   : %f ,%f ,%f",pid_ver.KP,pid_ver.KI,pid_ver.KD);
+    ROS_INFO("PID_roll     : %f ,%f ,%f",pid_hor_roll.KP,pid_hor_roll.KI,pid_hor_roll.KD);
+    ROS_INFO("PID_pitch    : %f ,%f ,%f",pid_hor_pitch.KP,pid_hor_pitch.KI,pid_hor_pitch.KD);
     // Quaternion
-//    local_quat.x = local_position.pose.orientation.x;
-//    local_quat.y = local_position.pose.orientation.y;
-//    local_quat.z = local_position.pose.orientation.z;
-//    local_quat.w = local_position.pose.orientation.w;
-//    tf::Quaternion q(local_quat.x,local_quat.y,local_quat.z,local_quat.w);
-//    tf::Matrix3x3 m(q);
-//    double roll, pitch, yaw;
-//    m.getRPY(roll, pitch, yaw);
-//    //std::cout << "Roll:" << roll << ",Pitch:" << pitch << ",Yaw:" << yaw << std::endl;
-//    ROS_INFO("Roll : %.4f Pitch : %.4f Yaw : %.4f",roll,pitch,yaw); // rad
-//    // translate to body frame
-//    /*
-//     * 2-D Rotation Matrix
-//     * cos(theta) -sin(theta)
-//     * sin(theta)  cos(theta)
-//     */
-//    local_body.x = cos(-yaw)*local_position.pose.position.x - sin(-yaw)*local_position.pose.position.y;
-//    local_body.y = sin(-yaw)*local_position.pose.position.x + cos(-yaw)*local_position.pose.position.y;
-//    local_body.z = local_position.pose.position.z;
-    local_body.x = local_position.point.x;
-    local_body.y = local_position.point.y;
-    local_body.z = local_position.point.z;
+    local_quat.x = local_position.pose.orientation.x;
+    local_quat.y = local_position.pose.orientation.y;
+    local_quat.z = local_position.pose.orientation.z;
+    local_quat.w = local_position.pose.orientation.w;
+    tf::Quaternion q(local_quat.x,local_quat.y,local_quat.z,local_quat.w);
+    tf::Matrix3x3 m(q);
+    double roll, pitch, yaw;
+    m.getRPY(roll, pitch, yaw);
+    //std::cout << "Roll:" << roll << ",Pitch:" << pitch << ",Yaw:" << yaw << std::endl;
+    ROS_INFO("Roll : %.4f Pitch : %.4f Yaw : %.4f",roll,pitch,yaw); // rad
+    // translate to body frame
+    /*
+     * 2-D Rotation Matrix
+     * cos(theta) -sin(theta)
+     * sin(theta)  cos(theta)
+     */
+    local_body.x = cos(-yaw)*local_position.pose.position.x - sin(-yaw)*local_position.pose.position.y;
+    local_body.y = sin(-yaw)*local_position.pose.position.x + cos(-yaw)*local_position.pose.position.y;
+    local_body.z = local_position.pose.position.z;
     ROS_INFO("local position: %.4f, %.4f, %.4f",local_body.x,local_body.y,local_body.z);
 
     keyboard_control();
@@ -216,20 +212,46 @@ int main(int argc, char **argv)
     err.pose.position.z = goal.z + z_desire - local_body.z;
     ROS_INFO("goal position : %.4f, %.4f, %.4f",goal.x,goal.y,goal.z);
     ROS_INFO("err  position : %.4f, %.4f, %.4f",err.pose.position.x,err.pose.position.y,err.pose.position.z);
-    //conmmands
-    ROS_INFO("P : %f I : %f  D : %f ",pid.KP,pid.KI,pid.KD);
-    integral   = integral + err.pose.position.z*(1/frequency);
-    derivative = (err.pose.position.z - err_prior)*frequency;
-    ROS_INFO("integral : %f , derivative : %f",integral,derivative);
-    err_prior =err.pose.position.z;
 
-    rollCmd = -err.pose.position.y*KP_horizontal;
-    pitchCmd = err.pose.position.x*KP_horizontal;
-    thrustCmd = err.pose.position.z*pid.KP + integral*pid.KI + derivative*pid.KD + bias;
+    //vertical conmmands =================================
+    pid_ver.in   = pid_ver.in + err.pose.position.z;
+    //===============
+    int confine = 5;
+    if (pid_ver.in>confine)
+      pid_ver.in=confine;
+    else if (pid_ver.in<-confine)
+      pid_ver.in = -confine;
+    //===============
+    pid_ver.de = (err.pose.position.z - pid_ver.pr);
+    pid_ver.pr =err.pose.position.z;
 
-    //rollCmd = confineHorizontal(rollCmd);
-    //pitchCmd = confineHorizontal(pitchCmd);
-    //thrustCmd = confineVertical(thrustCmd);
+    // horizontal commands roll ============================
+    pid_hor_roll.in   = pid_hor_roll.in + err.pose.position.y;
+    //===============
+    confine = 0.1;
+    if (pid_hor_roll.in>confine)
+      pid_hor_roll.in=confine;
+    else if (pid_hor_roll.in<-confine)
+      pid_hor_roll.in = -confine;
+    //===============
+    pid_hor_roll.de = (err.pose.position.y - pid_hor_roll.pr);
+    pid_hor_roll.pr =err.pose.position.y;
+
+    // horizontal commands pitch ============================
+    pid_hor_pitch.in   = pid_hor_pitch.in + err.pose.position.x;
+    //===============
+    confine = 0.1;
+    if (pid_hor_pitch.in>confine)
+      pid_hor_pitch.in=confine;
+    else if (pid_hor_pitch.in<-confine)
+      pid_hor_pitch.in = -confine;
+    //===============
+    pid_hor_pitch.de = (err.pose.position.x - pid_hor_pitch.pr);
+    pid_hor_pitch.pr = err.pose.position.x;
+
+    rollCmd = -(err.pose.position.y*pid_hor_roll.KP + pid_hor_roll.in*pid_hor_roll.KI + pid_hor_roll.de*pid_hor_roll.KD);
+    pitchCmd = err.pose.position.x*pid_hor_pitch.KP + pid_hor_pitch.in*pid_hor_pitch.KI + pid_hor_pitch.de*pid_hor_pitch.KD;
+    thrustCmd = err.pose.position.z*pid_ver.KP + pid_ver.in*pid_ver.KI + pid_ver.de*pid_ver.KD + bias;
     ROS_INFO("roll : %.4f pitch :%.4f thrust :%.4f",rollCmd ,pitchCmd ,thrustCmd);
 
     sensor_msgs::Joy controldata;
@@ -240,9 +262,18 @@ int main(int argc, char **argv)
     controldata.axes.push_back(flag);
     ctrlvelPub.publish(controldata);
 
+    //PID tuning
+    geometry_msgs::Quaternion RESULT;
+    RESULT.x = err.pose.position.z*pid_ver.KP;
+    RESULT.y = pid_ver.in*pid_ver.KI;
+    RESULT.z = pid_ver.de*pid_ver.KD;
+    RESULT.w = thrustCmd ;
+    pidPub.publish(RESULT);
+    //PID tuning
+
     ros::spinOnce();
     loop_rate.sleep();
   }
+}
   ROS_INFO("Flight Control Ending");
-  ros::spinOnce();
 }
