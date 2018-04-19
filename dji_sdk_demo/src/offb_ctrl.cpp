@@ -8,7 +8,7 @@
 #include "tf/tf.h"
 #define KP_horizontal 0.05
 //#define PI 3.1415926  C_PI
-double bias = 10;
+double bias = 32;
 geometry_msgs::Point goal;
 geometry_msgs::PoseStamped local_position;
 geometry_msgs::PoseStamped err;
@@ -25,16 +25,18 @@ uint8_t flag = (
 
 struct PID
 {
-  double KP;
-  double KI;
-  double KD;
-  double in;
-  double de;
-  double pr;
+  float KP;
+  float KI;
+  float KD;
+  float in;
+  float de;
+  float pr;
 };
 struct PID pid_ver;
 struct PID pid_hor_roll;
 struct PID pid_hor_pitch;
+
+
 
 char getch()
 {
@@ -122,10 +124,10 @@ double confineHorizontal(double cmd)
 
 double confineVertical(double cmd)
 {
-  if (cmd >= 37.5)
-  cmd = 37.3;
-  else if (cmd <= 37.1)
-  cmd = 37.1;
+  if (cmd >= 100)
+  cmd = 100;
+  else if (cmd <= 0)
+  cmd = 0;
   else
   return cmd;
 }
@@ -162,19 +164,24 @@ int main(int argc, char **argv)
   bool obtain_control_result = obtain_control();
   //initialize
   double frequency = 100;
-  double z_desire = 2; //m
+  double z_desire = 1; //m
   //vertical            horizontal_roll           horizontal_pitch
-  pid_ver.KP = 10;      pid_hor_roll.KP = 1;      pid_hor_pitch.KP = 0;
-  pid_ver.KI = 0.1;     pid_hor_roll.KI = 0.05;   pid_hor_pitch.KI = 0;
-  pid_ver.KD = 0;       pid_hor_roll.KD = 0;      pid_hor_pitch.KD = 0;
+  pid_ver.KP = 10;      pid_hor_roll.KP = 0.7;      pid_hor_pitch.KP = 0.7;
+  pid_ver.KI = 0.1;     pid_hor_roll.KI = 0.05;   pid_hor_pitch.KI = 0.05;
+  pid_ver.KD = 0;       pid_hor_roll.KD = 0.2;      pid_hor_pitch.KD = 0.2;
   pid_ver.in = 0;       pid_hor_roll.in = 0;      pid_hor_pitch.in = 0;
   pid_ver.de = 0;       pid_hor_roll.de = 0;      pid_hor_pitch.de = 0;
   pid_ver.pr = 0;       pid_hor_roll.pr = 0;      pid_hor_pitch.pr = 0;
-  int confine;
+  double confine;
   double  rollCmd, pitchCmd, thrustCmd;
   double  yawDesiredRad= 0  ;
 
-  ros::Rate loop_rate(frequency);
+ float in_roll = 0;
+ float in_pitch = 0;
+ float in_thrust = 0;
+ ros::Rate loop_rate(frequency);
+local_position.pose.orientation.w = 1;
+
 while(ros::ok()){
   if(obtain_control_result)
   {
@@ -193,8 +200,10 @@ while(ros::ok()){
     tf::Matrix3x3 m(q);
     double roll, pitch, yaw;
     m.getRPY(roll, pitch, yaw);
+
     //std::cout << "Roll:" << roll << ",Pitch:" << pitch << ",Yaw:" << yaw << std::endl;
     ROS_INFO("Roll : %.4f Pitch : %.4f Yaw : %.4f",roll,pitch,yaw); // rad
+
     // translate to body frame
     /*
      * 2-D Rotation Matrix
@@ -214,45 +223,49 @@ while(ros::ok()){
     ROS_INFO("err  position : %.4f, %.4f, %.4f",err.pose.position.x,err.pose.position.y,err.pose.position.z);
 
     //vertical conmmands =================================
-    pid_ver.in   = pid_ver.in + err.pose.position.z;
-    //===============
-    int confine = 5;
-    if (pid_ver.in>confine)
-      pid_ver.in=confine;
-    else if (pid_ver.in<-confine)
-      pid_ver.in = -confine;
+    in_thrust  = in_thrust + err.pose.position.z;
+    //================
+    confine = 5;
+    if (in_thrust>confine)
+      in_thrust=confine;
+    else if (in_thrust<-confine)
+      in_thrust = -confine;
     //===============
     pid_ver.de = (err.pose.position.z - pid_ver.pr);
     pid_ver.pr =err.pose.position.z;
 
-    // horizontal commands roll ============================
-    pid_hor_roll.in   = pid_hor_roll.in + err.pose.position.y;
+    // horizontal commands roll ============================;
+    in_roll  = in_roll + err.pose.position.y;
     //===============
     confine = 0.1;
-    if (pid_hor_roll.in>confine)
-      pid_hor_roll.in=confine;
-    else if (pid_hor_roll.in<-confine)
-      pid_hor_roll.in = -confine;
-    //===============
-    pid_hor_roll.de = (err.pose.position.y - pid_hor_roll.pr);
-    pid_hor_roll.pr =err.pose.position.y;
+    if (in_roll>confine)
+      in_roll = confine;
+    else if (in_roll<-confine)
+      in_roll = -confine;
+    //============
+ROS_INFO("inroll %f",in_roll);
+    pid_hor_roll.de = (double)err.pose.position.y - (double)pid_hor_roll.pr;
+    pid_hor_roll.pr =(double)err.pose.position.y;
 
     // horizontal commands pitch ============================
-    pid_hor_pitch.in   = pid_hor_pitch.in + err.pose.position.x;
+    in_pitch   = in_pitch + err.pose.position.x;
     //===============
     confine = 0.1;
-    if (pid_hor_pitch.in>confine)
-      pid_hor_pitch.in=confine;
-    else if (pid_hor_pitch.in<-confine)
-      pid_hor_pitch.in = -confine;
+    if (in_pitch>confine)
+      in_pitch=confine;
+    else if (in_pitch<-confine)
+      in_pitch = -confine;
     //===============
-    pid_hor_pitch.de = (err.pose.position.x - pid_hor_pitch.pr);
-    pid_hor_pitch.pr = err.pose.position.x;
+    pid_hor_pitch.de = ((double)err.pose.position.x - (double)pid_hor_pitch.pr);
+    pid_hor_pitch.pr = (double)err.pose.position.x;
 
-    rollCmd = -(err.pose.position.y*pid_hor_roll.KP + pid_hor_roll.in*pid_hor_roll.KI + pid_hor_roll.de*pid_hor_roll.KD);
-    pitchCmd = err.pose.position.x*pid_hor_pitch.KP + pid_hor_pitch.in*pid_hor_pitch.KI + pid_hor_pitch.de*pid_hor_pitch.KD;
-    thrustCmd = err.pose.position.z*pid_ver.KP + pid_ver.in*pid_ver.KI + pid_ver.de*pid_ver.KD + bias;
-    ROS_INFO("roll : %.4f pitch :%.4f thrust :%.4f",rollCmd ,pitchCmd ,thrustCmd);
+    rollCmd = -(err.pose.position.y*pid_hor_roll.KP + in_roll*pid_hor_roll.KI + pid_hor_roll.de*pid_hor_roll.KD);
+    pitchCmd = err.pose.position.x*pid_hor_pitch.KP + in_pitch*pid_hor_pitch.KI + pid_hor_pitch.de*pid_hor_pitch.KD;
+    thrustCmd = err.pose.position.z*pid_ver.KP + in_thrust*pid_ver.KI+ pid_ver.de*pid_ver.KD + bias;
+    rollCmd = confineHorizontal(rollCmd);
+    pitchCmd = confineHorizontal(pitchCmd);
+    thrustCmd = confineVertical(thrustCmd);
+    ROS_INFO("roll : %f pitch :%f thrust :%f",rollCmd ,pitchCmd ,thrustCmd);
 
     sensor_msgs::Joy controldata;
     controldata.axes.push_back(rollCmd);
