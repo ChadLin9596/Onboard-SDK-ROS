@@ -62,16 +62,16 @@ void keyboard_control()
       //ROS_INFO("z-!!!");
       break;
       case 119:     // key foward  w
-      goal.x += 0.001;
+      goal.x += 0.05;
       break;
       case 115:     // key back   s
-      goal.x -= 0.001;
+      goal.x -= 0.05;
       break;
       case 97:      // key left    a
-      goal.y += 0.001;
+      goal.y += 0.05;
       break;
       case 100:     // key right   d
-      goal.y -= 0.001;
+      goal.y -= 0.05;
       break;
       case 114:     // key return  r
       goal.x = 0;
@@ -148,9 +148,9 @@ int main(int argc, char **argv)
   frequency = 100;
   double z_desire = 1; //m
   //vertical            horizontal_roll           horizontal_pitch
-  pid_ver.KP = 10;      pid_hor_roll.KP = 0.7;      pid_hor_pitch.KP = 0.7;
-  pid_ver.KI = 0.1;     pid_hor_roll.KI = 0.05;   pid_hor_pitch.KI = 0.05;
-  pid_ver.KD = 0;       pid_hor_roll.KD = 0.2;      pid_hor_pitch.KD = 0.2;
+  pid_ver.KP = 20;      pid_hor_roll.KP = 0.5;    pid_hor_pitch.KP = 0.5;
+  pid_ver.KI = 0.05;    pid_hor_roll.KI = 0.001;      pid_hor_pitch.KI = 0.001;
+  pid_ver.KD = 1000;    pid_hor_roll.KD = 40;      pid_hor_pitch.KD = 40;
   pid_ver.in = 0;       pid_hor_roll.in = 0;      pid_hor_pitch.in = 0;
   pid_ver.de = 0;       pid_hor_roll.de = 0;      pid_hor_pitch.de = 0;
   pid_ver.pr = 0;       pid_hor_roll.pr = 0;      pid_hor_pitch.pr = 0;
@@ -204,11 +204,11 @@ while(ros::ok()){
     //vertical conmmands =================================
     pid_ver.in  = pid_ver.in + err.pose.position.z;
     //================
-    confine = 5;
-    if (pid_ver.in>confine)
-      pid_ver.in=confine;
-    else if (pid_ver.in<-confine)
-      pid_ver.in = -confine;
+//    confine = 5;
+//    if (pid_ver.in>confine)
+//      pid_ver.in=confine;
+//    else if (pid_ver.in<-confine)
+//      pid_ver.in = -confine;
     //===============
     pid_ver.de = (err.pose.position.z - pid_ver.pr);
     pid_ver.pr =err.pose.position.z;
@@ -216,11 +216,11 @@ while(ros::ok()){
     // horizontal commands roll ============================;
     pid_hor_roll.in  = pid_hor_roll.in + err.pose.position.y;
     //===============
-    confine = 0.1;
-    if (pid_hor_roll.in>confine)
-      pid_hor_roll.in = confine;
-    else if (pid_hor_roll.in<-confine)
-      pid_hor_roll.in = -confine;
+//    confine = 0.1;
+//    if (pid_hor_roll.in>confine)
+//      pid_hor_roll.in = confine;
+//    else if (pid_hor_roll.in<-confine)
+//      pid_hor_roll.in = -confine;
     //============
     pid_hor_roll.de = err.pose.position.y - pid_hor_roll.pr;
     pid_hor_roll.pr =err.pose.position.y;
@@ -228,11 +228,11 @@ while(ros::ok()){
     // horizontal commands pitch ============================
     pid_hor_pitch.in   = pid_hor_pitch.in + err.pose.position.x;
     //===============
-    confine = 0.1;
-    if (pid_hor_pitch.in>confine)
-      pid_hor_pitch.in=confine;
-    else if (pid_hor_pitch.in<-confine)
-      pid_hor_pitch.in = -confine;
+//    confine = 0.1;
+//    if (pid_hor_pitch.in>confine)
+//      pid_hor_pitch.in=confine;
+//    else if (pid_hor_pitch.in<-confine)
+//      pid_hor_pitch.in = -confine;
     //===============
     pid_hor_pitch.de = err.pose.position.x - pid_hor_pitch.pr;
     pid_hor_pitch.pr = err.pose.position.x;
