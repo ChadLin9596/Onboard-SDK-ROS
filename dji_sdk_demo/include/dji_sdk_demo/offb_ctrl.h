@@ -1,46 +1,39 @@
-/** @file offb_ctrl.cpp
- *  @version 1
- *  @date March, 2018
- *
- *  @brief
- *  use keyboard to control
- *
- *  @Author Chad Lin
- *	NCRL
- */
-
-#ifndef PROJECT_OFFB_CTRL_H
-#define PROJECT_OFFB_CTRL_H
-
-#endif //PROJECT_OFFB_CTRL_H
-
-#include <dji_sdk/SetLocalPosRef.h>
 #include <ros/ros.h>
+#include "dji_sdk/dji_sdk_node.h"
+
+#include "sensor_msgs/Joy.h"
+#include "geometry_msgs/PoseStamped.h"
+#include "geometry_msgs/Quaternion.h"
 #include <geometry_msgs/PointStamped.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <std_msgs/UInt8.h>
-#include <sensor_msgs/Joy.h>
-#include <sensor_msgs/NavSatFix.h>
-//DJI SDK includes
+#include "tf/tf.h"
 #include <dji_sdk/DroneTaskControl.h>
-#include <dji_sdk/SDKControlAuthority.h>
-#include <dji_sdk/QueryDroneVersion.h>
 
-float target_offset_x;
-float target_offset_y;
-float target_offset_z;
-float target_yaw;
-double x ,y ,z, yaw;
-double xCmd, yCmd, zCmd;
-sensor_msgs::Joy controlPosYaw;
-geometry_msgs::PoseStamped host_mocap;
+geometry_msgs::PoseStamped local_position;
+geometry_msgs::PoseStamped err;
+geometry_msgs::Quaternion local_quat;
+geometry_msgs::Point goal;
+geometry_msgs::Point local_body;
 
-bool obtain_control();
+ros::ServiceClient sdk_ctrl_authority_service;
 
-void host_pos(const geometry_msgs::PoseStamped::ConstPtr& msg);
+uint8_t flag = (
+                DJISDK::VERTICAL_THRUST      | // VERTICAL_THRUST = 0~100%
+                DJISDK::HORIZONTAL_ANGLE     | // limit 35 degree
+                DJISDK::YAW_ANGLE            | // limit 150 degree/s
+                DJISDK::HORIZONTAL_BODY      | // body frame
+                DJISDK::STABLE_ENABLE
+               );
 
-char getch();
+struct PID
+{
+  float KP;
+  float KI;
+  float KD;
+  float in;
+  float de;
+  float pr;
+};
 
-void keyboard_control();
-
-void setTarget(float x, float y, float z, float yaw);
+struct PID pid_ver;
+struct PID pid_hor_roll;
+struct PID pid_hor_pitch;

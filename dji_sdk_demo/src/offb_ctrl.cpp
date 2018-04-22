@@ -1,42 +1,22 @@
-#include <ros/ros.h>
-#include "dji_sdk/dji_sdk_node.h"
 #include "dji_sdk/dji_sdk.h"
-#include "sensor_msgs/Joy.h"
-#include "geometry_msgs/PoseStamped.h"
-#include "geometry_msgs/Quaternion.h"
-#include <geometry_msgs/PointStamped.h>
-#include "tf/tf.h"
-#define KP_horizontal 0.05
-//#define PI 3.1415926  C_PI
-double bias = 32;
-geometry_msgs::Point goal;
-geometry_msgs::PoseStamped local_position;
-geometry_msgs::PoseStamped err;
-geometry_msgs::Quaternion local_quat;
-geometry_msgs::Point local_body;
-ros::ServiceClient sdk_ctrl_authority_service;
-uint8_t flag = (
-                DJISDK::VERTICAL_THRUST      | // VERTICAL_THRUST = 0~100%
-                DJISDK::HORIZONTAL_ANGLE     | // limit 35 degree
-                DJISDK::YAW_ANGLE            | // limit 150 degree/s
-                DJISDK::HORIZONTAL_BODY      | // body frame
-                DJISDK::STABLE_ENABLE
-               );
-
-struct PID
-{
-  float KP;
-  float KI;
-  float KD;
-  float in;
-  float de;
-  float pr;
-};
-struct PID pid_ver;
-struct PID pid_hor_roll;
-struct PID pid_hor_pitch;
-
-
+#include "dji_sdk_demo/offb_ctrl.h"
+double bias;
+double frequency;
+// get time
+double secs = 0;
+double min = 0;
+double start = 0;
+void getTime(){
+  double now =ros::Time::now().toSec();
+  secs += now-start;
+  start = now;
+  if (secs >= 60)
+  {
+    secs -= 60;
+    min += 1;
+  }
+  ROS_INFO("%2.2f min %2.2f sec",min,secs);
+}
 
 char getch()
 {
@@ -65,6 +45,7 @@ char getch()
     }
     return (buf);
 }
+
 void keyboard_control()
 {
   int c = getch();
@@ -163,7 +144,8 @@ int main(int argc, char **argv)
 
   bool obtain_control_result = obtain_control();
   //initialize
-  double frequency = 100;
+  bias = 32;
+  frequency = 100;
   double z_desire = 1; //m
   //vertical            horizontal_roll           horizontal_pitch
   pid_ver.KP = 10;      pid_hor_roll.KP = 0.7;      pid_hor_pitch.KP = 0.7;
@@ -175,18 +157,15 @@ int main(int argc, char **argv)
   double confine;
   double  rollCmd, pitchCmd, thrustCmd;
   double  yawDesiredRad= 0  ;
-
- float in_roll = 0;
- float in_pitch = 0;
- float in_thrust = 0;
+  start =ros::Time::now().toSec();
  ros::Rate loop_rate(frequency);
-local_position.pose.orientation.w = 1;
+ local_position.pose.orientation.w = 1;
 
 while(ros::ok()){
   if(obtain_control_result)
   {
-    //ros::Time com =ros::Time::now();
     ROS_INFO("---keyboard control start---");
+    getTime();
     ROS_INFO("i,u ctrl bias: %f",bias);
     ROS_INFO("PID_thrust   : %f ,%f ,%f",pid_ver.KP,pid_ver.KI,pid_ver.KD);
     ROS_INFO("PID_roll     : %f ,%f ,%f",pid_hor_roll.KP,pid_hor_roll.KI,pid_hor_roll.KD);
@@ -223,45 +202,44 @@ while(ros::ok()){
     ROS_INFO("err  position : %.4f, %.4f, %.4f",err.pose.position.x,err.pose.position.y,err.pose.position.z);
 
     //vertical conmmands =================================
-    in_thrust  = in_thrust + err.pose.position.z;
+    pid_ver.in  = pid_ver.in + err.pose.position.z;
     //================
     confine = 5;
-    if (in_thrust>confine)
-      in_thrust=confine;
-    else if (in_thrust<-confine)
-      in_thrust = -confine;
+    if (pid_ver.in>confine)
+      pid_ver.in=confine;
+    else if (pid_ver.in<-confine)
+      pid_ver.in = -confine;
     //===============
     pid_ver.de = (err.pose.position.z - pid_ver.pr);
     pid_ver.pr =err.pose.position.z;
 
     // horizontal commands roll ============================;
-    in_roll  = in_roll + err.pose.position.y;
+    pid_hor_roll.in  = pid_hor_roll.in + err.pose.position.y;
     //===============
     confine = 0.1;
-    if (in_roll>confine)
-      in_roll = confine;
-    else if (in_roll<-confine)
-      in_roll = -confine;
+    if (pid_hor_roll.in>confine)
+      pid_hor_roll.in = confine;
+    else if (pid_hor_roll.in<-confine)
+      pid_hor_roll.in = -confine;
     //============
-ROS_INFO("inroll %f",in_roll);
-    pid_hor_roll.de = (double)err.pose.position.y - (double)pid_hor_roll.pr;
-    pid_hor_roll.pr =(double)err.pose.position.y;
+    pid_hor_roll.de = err.pose.position.y - pid_hor_roll.pr;
+    pid_hor_roll.pr =err.pose.position.y;
 
     // horizontal commands pitch ============================
-    in_pitch   = in_pitch + err.pose.position.x;
+    pid_hor_pitch.in   = pid_hor_pitch.in + err.pose.position.x;
     //===============
     confine = 0.1;
-    if (in_pitch>confine)
-      in_pitch=confine;
-    else if (in_pitch<-confine)
-      in_pitch = -confine;
+    if (pid_hor_pitch.in>confine)
+      pid_hor_pitch.in=confine;
+    else if (pid_hor_pitch.in<-confine)
+      pid_hor_pitch.in = -confine;
     //===============
-    pid_hor_pitch.de = ((double)err.pose.position.x - (double)pid_hor_pitch.pr);
-    pid_hor_pitch.pr = (double)err.pose.position.x;
+    pid_hor_pitch.de = err.pose.position.x - pid_hor_pitch.pr;
+    pid_hor_pitch.pr = err.pose.position.x;
 
-    rollCmd = -(err.pose.position.y*pid_hor_roll.KP + in_roll*pid_hor_roll.KI + pid_hor_roll.de*pid_hor_roll.KD);
-    pitchCmd = err.pose.position.x*pid_hor_pitch.KP + in_pitch*pid_hor_pitch.KI + pid_hor_pitch.de*pid_hor_pitch.KD;
-    thrustCmd = err.pose.position.z*pid_ver.KP + in_thrust*pid_ver.KI+ pid_ver.de*pid_ver.KD + bias;
+    rollCmd = -(err.pose.position.y*pid_hor_roll.KP + pid_hor_roll.in*pid_hor_roll.KI + pid_hor_roll.de*pid_hor_roll.KD);
+    pitchCmd = err.pose.position.x*pid_hor_pitch.KP + pid_hor_pitch.in*pid_hor_pitch.KI + pid_hor_pitch.de*pid_hor_pitch.KD;
+    thrustCmd = err.pose.position.z*pid_ver.KP + pid_ver.in*pid_ver.KI+ pid_ver.de*pid_ver.KD + bias;
     rollCmd = confineHorizontal(rollCmd);
     pitchCmd = confineHorizontal(pitchCmd);
     thrustCmd = confineVertical(thrustCmd);
