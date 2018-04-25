@@ -1,11 +1,6 @@
 #include "dji_sdk/dji_sdk.h"
 #include "dji_sdk_demo/offb_ctrl.h"
-double bias;
-double frequency;
-// get time
-double secs = 0;
-double min = 0;
-double start = 0;
+
 void getTime(){
   double now =ros::Time::now().toSec();
   secs += now-start;
@@ -79,17 +74,17 @@ void keyboard_control()
       goal.z = 0;
       break;
       case 105:    // i
-      bias -= 0.01;
+      yawDesiredRad -= 0.01;
       break;
       case 117:    // u
-      bias += 0.01;
+      yawDesiredRad += 0.01;
       break;
     }
   }
 }
 
-void mocap_cb(const geometry_msgs::PoseStamped::ConstPtr& msg){
-
+void mocap_cb(const geometry_msgs::PoseStamped::ConstPtr& msg)
+{
   local_position = *msg;
 }
 
@@ -149,14 +144,19 @@ int main(int argc, char **argv)
   double z_desire = 1; //m
   //vertical            horizontal_roll           horizontal_pitch
   pid_ver.KP = 20;      pid_hor_roll.KP = 0.5;    pid_hor_pitch.KP = 0.5;
-  pid_ver.KI = 0.05;    pid_hor_roll.KI = 0.001;      pid_hor_pitch.KI = 0.001;
-  pid_ver.KD = 1000;    pid_hor_roll.KD = 40;      pid_hor_pitch.KD = 40;
+  pid_ver.KI = 0.05;    pid_hor_roll.KI = 0.001;  pid_hor_pitch.KI = 0.001;
+  pid_ver.KD = 1000;    pid_hor_roll.KD = 40;     pid_hor_pitch.KD = 40;
   pid_ver.in = 0;       pid_hor_roll.in = 0;      pid_hor_pitch.in = 0;
   pid_ver.de = 0;       pid_hor_roll.de = 0;      pid_hor_pitch.de = 0;
   pid_ver.pr = 0;       pid_hor_roll.pr = 0;      pid_hor_pitch.pr = 0;
-  double confine;
-  double  rollCmd, pitchCmd, thrustCmd;
-  double  yawDesiredRad= 0  ;
+  // yaw rate
+  pid_yaw.KP = 0;
+  pid_yaw.KI = 0;
+  pid_yaw.KD = 0;
+  pid_yaw.in = 0;
+  pid_yaw.de = 0;
+  pid_yaw.pr = 0;
+
   start =ros::Time::now().toSec();
  ros::Rate loop_rate(frequency);
  local_position.pose.orientation.w = 1;
@@ -166,10 +166,10 @@ while(ros::ok()){
   {
     ROS_INFO("---keyboard control start---");
     getTime();
-    ROS_INFO("i,u ctrl bias: %f",bias);
-    ROS_INFO("PID_thrust   : %f ,%f ,%f",pid_ver.KP,pid_ver.KI,pid_ver.KD);
-    ROS_INFO("PID_roll     : %f ,%f ,%f",pid_hor_roll.KP,pid_hor_roll.KI,pid_hor_roll.KD);
-    ROS_INFO("PID_pitch    : %f ,%f ,%f",pid_hor_pitch.KP,pid_hor_pitch.KI,pid_hor_pitch.KD);
+    //ROS_INFO("i,u ctrl bias: %f",bias);
+    //ROS_INFO("PID_thrust   : %f ,%f ,%f",pid_ver.KP,pid_ver.KI,pid_ver.KD);
+    //ROS_INFO("PID_roll     : %f ,%f ,%f",pid_hor_roll.KP,pid_hor_roll.KI,pid_hor_roll.KD);
+    //ROS_INFO("PID_pitch    : %f ,%f ,%f",pid_hor_pitch.KP,pid_hor_pitch.KI,pid_hor_pitch.KD);
     // Quaternion
     local_quat.x = local_position.pose.orientation.x;
     local_quat.y = local_position.pose.orientation.y;
@@ -198,6 +198,7 @@ while(ros::ok()){
     err.pose.position.x = goal.x - local_body.x;
     err.pose.position.y = goal.y - local_body.y;
     err.pose.position.z = goal.z + z_desire - local_body.z;
+    yaw_err = 0 - yaw;
     ROS_INFO("goal position : %.4f, %.4f, %.4f",goal.x,goal.y,goal.z);
     ROS_INFO("err  position : %.4f, %.4f, %.4f",err.pose.position.x,err.pose.position.y,err.pose.position.z);
 
@@ -237,13 +238,26 @@ while(ros::ok()){
     pid_hor_pitch.de = err.pose.position.x - pid_hor_pitch.pr;
     pid_hor_pitch.pr = err.pose.position.x;
 
+    // horizontal commands yawrate ============================
+//    pid_yaw.in   = pid_yaw.in + err.pose.position.x;
+//    //===============
+////    confine = 0.1;
+////    if (pid_hor_pitch.in>confine)
+////      pid_hor_pitch.in=confine;
+////    else if (pid_hor_pitch.in<-confine)
+////      pid_hor_pitch.in = -confine;
+//    //===============
+//    pid_yaw.de = err.pose.position.x - pid_yaw.pr;
+//    pid_yaw.pr = err.pose.position.x;
+
+
     rollCmd = -(err.pose.position.y*pid_hor_roll.KP + pid_hor_roll.in*pid_hor_roll.KI + pid_hor_roll.de*pid_hor_roll.KD);
     pitchCmd = err.pose.position.x*pid_hor_pitch.KP + pid_hor_pitch.in*pid_hor_pitch.KI + pid_hor_pitch.de*pid_hor_pitch.KD;
     thrustCmd = err.pose.position.z*pid_ver.KP + pid_ver.in*pid_ver.KI+ pid_ver.de*pid_ver.KD + bias;
     rollCmd = confineHorizontal(rollCmd);
     pitchCmd = confineHorizontal(pitchCmd);
     thrustCmd = confineVertical(thrustCmd);
-    ROS_INFO("roll : %f pitch :%f thrust :%f",rollCmd ,pitchCmd ,thrustCmd);
+    ROS_INFO("roll : %f pitch :%f thrust :%f yawrate:%f",rollCmd ,pitchCmd ,thrustCmd, yawDesiredRad);
 
     sensor_msgs::Joy controldata;
     controldata.axes.push_back(rollCmd);
