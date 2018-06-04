@@ -174,13 +174,13 @@ target_link_libraries(landing
         )
 add_dependencies(landing dji_sdk_generate_messages_cpp)
 
-add_executable(offb_ctrl
-        src/offb_ctrl.cpp)
-target_link_libraries(offb_ctrl
+add_executable(offb_ctrl_m100
+        src/offb_ctrl_m100.cpp)
+target_link_libraries(offb_ctrl_m100
         ${catkin_LIBRARIES}
         ${DJIOSDK_LIBRARIES}
         )
-add_dependencies(offb_ctrl dji_sdk_generate_messages_cpp)
+add_dependencies(offb_ctrl_m100 dji_sdk_generate_messages_cpp)
 
 add_executable(GPS_ctrl
         src/GPS_ctrl.cpp)
